@@ -1,0 +1,14 @@
+# Ignorar archivo .env en backend
+punto_1/backend/.env
+
+# Ignorar entorno virtual de Python en backend
+punto_1/backend/venv/
+
+# Ignorar node_modules en frontend
+punto_1/frontend/node_modules/
+
+# Ignorar archivos de caché de Python
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/*.pyd

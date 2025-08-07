@@ -1,0 +1,125 @@
+body {
+	background-color: #282c34;
+	color: white;
+	font-family: sans-serif;
+	margin: 0;
+}
+
+.App {
+	text-align: center;
+}
+
+.App-header {
+	background-color: #282c34;
+	min-height: 100vh;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: flex-start;
+	font-size: calc(10px + 1.5vmin);
+	color: white;
+	padding: 20px;
+	box-sizing: border-box;
+}
+
+.status-card,
+.action-card,
+.history-card {
+	background-color: #3c414e;
+	border-radius: 8px;
+	padding: 20px;
+	margin: 15px 0;
+	width: 100%;
+	max-width: 700px;
+	box-sizing: border-box;
+}
+
+.subscribe-controls {
+	display: flex;
+	justify-content: center;
+	align-items: center;
+	gap: 15px;
+}
+
+select {
+	padding: 10px;
+	border-radius: 4px;
+	border: none;
+	background-color: #282c34;
+	color: white;
+	min-width: 250px;
+}
+
+button {
+	padding: 10px 18px;
+	border: none;
+	border-radius: 4px;
+	cursor: pointer;
+	background-color: #61dafb;
+	font-weight: bold;
+	transition: background-color 0.2s;
+}
+
+button:disabled {
+	background-color: #5a606d;
+	cursor: not-allowed;
+}
+
+.message {
+	color: #81c784;
+	font-size: 0.9em;
+	margin-top: 15px;
+}
+
+.error {
+	color: #e57373;
+	font-size: 0.9em;
+	margin-top: 15px;
+}
+
+/* Estilos para la lista de fondos suscritos */
+.fund-list {
+	list-style: none;
+	padding: 0;
+}
+
+.fund-list li {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	padding: 10px;
+	border-bottom: 1px solid #5a606d;
+}
+
+.fund-list li:last-child {
+	border-bottom: none;
+}
+
+.cancel-btn {
+	background-color: #f06292;
+	padding: 5px 10px;
+	font-size: 0.8em;
+}
+
+/* Contenedor de la tabla para scroll horizontal */
+.table-container {
+	overflow-x: auto;
+}
+
+table {
+	width: 100%;
+	border-collapse: collapse;
+	margin-top: 15px;
+}
+
+th,
+td {
+	padding: 12px;
+	border-bottom: 1px solid #5a606d;
+	white-space: nowrap;
+}
+
+th {
+	background-color: #4a505c;
+	text-align: left;
+}

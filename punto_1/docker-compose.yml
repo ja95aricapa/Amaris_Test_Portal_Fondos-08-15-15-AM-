@@ -1,0 +1,48 @@
+version: "3.8"
+
+services:
+  # Servicio de la API (Backend)
+  api:
+    build:
+      context: ./backend
+      dockerfile: ../Dockerfile.api
+    ports:
+      - "8000:8000"
+    volumes:
+      # Mapea todo el contenido de la carpeta 'backend' para el desarrollo en vivo
+      - ./backend:/app
+    environment:
+      # Esta URL le dice a PynamoDB que se conecte al contenedor de DynamoDB local
+      - DYNAMODB_URL=http://dynamodb-local:8000
+      # Credenciales dummy para satisfacer a boto3
+      - AWS_ACCESS_KEY_ID=dummy
+      - AWS_SECRET_ACCESS_KEY=dummy
+      - AWS_DEFAULT_REGION=us-east-1
+    depends_on:
+      - dynamodb-local
+
+  # Servicio de la Interfaz (Frontend)
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.react
+    ports:
+      - "3000:80"
+    depends_on:
+      - api
+    environment:
+      - REACT_APP_API_URL=http://localhost:8000
+
+  # Servicio de DynamoDB Local
+  dynamodb-local:
+    image: amazon/dynamodb-local:latest
+    container_name: dynamodb-local
+    ports:
+      - "8001:8000"
+    volumes:
+      - ./dynamodb_data:/home/dynamodblocal/data
+    working_dir: /home/dynamodblocal
+    command: "-jar DynamoDBLocal.jar -sharedDb -dbPath ."
+
+volumes:
+  dynamodb_data:

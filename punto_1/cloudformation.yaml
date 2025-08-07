@@ -1,0 +1,268 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  Despliegue de Punto 1 (Portal de Fondos) en AWS con ECR, ECS, ALB y DynamoDB.
+
+Parameters:
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+  PublicSubnets:
+    Type: List<AWS::EC2::Subnet::Id>
+  PrivateSubnets:
+    Type: List<AWS::EC2::Subnet::Id>
+  ApiContainerPort:
+    Type: Number
+    Default: 8000
+  FrontendContainerPort:
+    Type: Number
+    Default: 80
+
+Resources:
+  # ECR Repos
+  ApiECRRepo:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: portal-fondos-api-cf
+  FrontendECRRepo:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: portal-fondos-frontend-cf
+
+  # ECS Cluster
+  PortalFondosCluster:
+    Type: AWS::ECS::Cluster
+
+  # DynamoDB Table
+  FondosDynamoTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: FondosCliente
+      AttributeDefinitions:
+        - AttributeName: user_id
+          AttributeType: S
+        - AttributeName: record_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: user_id
+          KeyType: HASH
+        - AttributeName: record_id
+          KeyType: RANGE
+      BillingMode: PAY_PER_REQUEST
+
+  # IAM Roles
+  ECSTaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: portal-fondos-ecs-execution-role
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+  ECSTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: portal-fondos-ecs-task-role
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: DynamoDBAccess
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:Query
+                  - dynamodb:Scan
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:DeleteItem
+                Resource: !GetAtt FondosDynamoTable.Arn
+
+  # Security Groups
+  ALBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: "Allow HTTP inbound traffic to the ALB"
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+  ECSSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: "Allow traffic from the ALB to ECS tasks"
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: !Ref ApiContainerPort
+          ToPort: !Ref ApiContainerPort
+          SourceSecurityGroupId: !Ref ALBSecurityGroup
+        - IpProtocol: tcp
+          FromPort: !Ref FrontendContainerPort
+          ToPort: !Ref FrontendContainerPort
+          SourceSecurityGroupId: !Ref ALBSecurityGroup
+
+  # Application Load Balancer
+  PortalFondosALB:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: portal-fondos-alb
+      Scheme: internet-facing
+      Subnets: !Ref PublicSubnets
+      SecurityGroups: [!Ref ALBSecurityGroup]
+  HttpListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref PortalFondosALB
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref FrontendTargetGroup
+  ApiListenerRule:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Properties:
+      ListenerArn: !Ref HttpListener
+      Priority: 1
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref ApiTargetGroup
+      Conditions:
+        - Field: path-pattern
+          PathPatternConfig:
+            Values: ["/funds/*"]
+
+  # Target Groups
+  ApiTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: api-tg
+      Protocol: HTTP
+      Port: !Ref ApiContainerPort
+      VpcId: !Ref VpcId
+      TargetType: ip
+      HealthCheckPath: "/"
+      HealthCheckProtocol: HTTP
+      HealthCheckIntervalSeconds: 30
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 3
+      UnhealthyThresholdCount: 2
+  FrontendTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: frontend-tg
+      Protocol: HTTP
+      Port: !Ref FrontendContainerPort
+      VpcId: !Ref VpcId
+      TargetType: ip
+      HealthCheckPath: "/"
+      HealthCheckProtocol: HTTP
+      HealthCheckIntervalSeconds: 30
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 3
+      UnhealthyThresholdCount: 2
+
+  # Task Definitions
+  ApiTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: portal-fondos-api-task
+      Cpu: "256"
+      Memory: "512"
+      NetworkMode: awsvpc
+      RequiresCompatibilities: [FARGATE]
+      ExecutionRoleArn: !Ref ECSTaskExecutionRole
+      TaskRoleArn: !Ref ECSTaskRole
+      ContainerDefinitions:
+        - Name: api
+          Image: !Sub "${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${ApiECRRepo}:latest"
+          PortMappings: [{ ContainerPort: !Ref ApiContainerPort }]
+          Environment: [{ Name: AWS_DEFAULT_REGION, Value: !Ref AWS::Region }]
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: /ecs/portal-fondos-api
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: api
+  FrontendTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: portal-fondos-frontend-task
+      Cpu: "256"
+      Memory: "512"
+      NetworkMode: awsvpc
+      RequiresCompatibilities: [FARGATE]
+      ExecutionRoleArn: !Ref ECSTaskExecutionRole
+      ContainerDefinitions:
+        - Name: frontend
+          Image: !Sub "${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${FrontendECRRepo}:latest"
+          PortMappings: [{ ContainerPort: !Ref FrontendContainerPort }]
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: /ecs/portal-fondos-frontend
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: frontend
+
+  # ECS Services
+  ApiService:
+    Type: AWS::ECS::Service
+    Properties:
+      ServiceName: portal-fondos-api-svc
+      Cluster: !Ref PortalFondosCluster
+      LaunchType: FARGATE
+      TaskDefinition: !Ref ApiTaskDefinition
+      DesiredCount: 2
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          Subnets: !Ref PrivateSubnets
+          SecurityGroups: [!Ref ECSSecurityGroup]
+          AssignPublicIp: ENABLED
+      LoadBalancers:
+        [
+          {
+            TargetGroupArn: !Ref ApiTargetGroup,
+            ContainerName: api,
+            ContainerPort: !Ref ApiContainerPort,
+          },
+        ]
+    DependsOn: [HttpListener, ApiListenerRule]
+  FrontendService:
+    Type: AWS::ECS::Service
+    Properties:
+      ServiceName: portal-fondos-frontend-svc
+      Cluster: !Ref PortalFondosCluster
+      LaunchType: FARGATE
+      TaskDefinition: !Ref FrontendTaskDefinition
+      DesiredCount: 2
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          Subnets: !Ref PrivateSubnets
+          SecurityGroups: [!Ref ECSSecurityGroup]
+          AssignPublicIp: ENABLED
+      LoadBalancers:
+        [
+          {
+            TargetGroupArn: !Ref FrontendTargetGroup,
+            ContainerName: frontend,
+            ContainerPort: !Ref FrontendContainerPort,
+          },
+        ]
+    DependsOn: [HttpListener]
+
+Outputs:
+  ALBEndpoint:
+    Description: ALB public URL
+    Value: !Sub "http://${PortalFondosALB.DNSName}"
